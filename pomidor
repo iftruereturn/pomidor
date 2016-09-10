@@ -4,10 +4,13 @@
 
 usage () {
   cat <<END
-pomidor [-c]
+pomidor [-s] [-m] [-w n] [-r n]
 
-Sets a pomodoro timer, work - 25 min, rest - 5 min
-      -c: show countdown (in seconds)
+Sets a pomodoro timer
+      -s: show countdown (in seconds)
+      -m: show countdown (in minutes)
+      -w: specify time of work in minutes (default: 25)
+      -r: specify time of rest in minutes (default: 5)
       -h: show this message
 END
 }
@@ -21,12 +24,67 @@ error () {
   exit $2
 } >&2
 
-declare countdown=
+# function to show time.
+# First argument: time to show (in seconds)
+# Second argument: text
+# Third argument: option (s: seconds, m: minutes, sm: seconds+minutes)
+show_time() {
+  declare formatted_time=
+  if [[ $3 = "s" ]]; then
+    formatted_time="$1 seconds ${2}"
+  elif [[ $3 = "m" ]]; then
+    formatted_time="$(( ${1} / 60 )) minutes ${2}"
+  elif [[ $3 = "sm" ]]; then
+    declare seconds=$(( ${1} % 60 ))
+    if [[ ${seconds} = [0-9] ]]; then
+      seconds="0${seconds}"
+    fi
+    formatted_time="$(( ${1} / 60 )):${seconds} ${2}"
+  else
+    formatted_time="there is still some time left"
+  fi
 
-while getopts ":hc" opt; do
+  echo -ne " ${formatted_time} \r"
+}
+
+# Function returns 0 when it's argument is a number
+isnum () {
+  declare -r num_re='^[0-9]+$'
+  declare -r octal_re='^0(.+)'
+  num_error="ok"
+  if [[ $1 =~ $num_re ]]; then
+    if [[ $1 =~ $octal_re ]]; then
+      num_error="$1 is not a number, did you mean ${BASH_REMATCH[1]}?"
+      return 1
+    fi
+  else
+    num_error="$1 is not a number"
+    return 1
+  fi
+
+  return 0
+}
+
+declare countdown_seconds=
+declare countdown_minutes=
+declare -i work_time=25
+declare -i rest_time=5
+
+while getopts ":hsmw:r:" opt; do
   case $opt in
-    c)
-      countdown="yes"
+    s)
+      countdown_seconds="s"
+      ;;
+    m)
+      countdown_minutes="m"
+      ;;
+    w)
+      isnum ${OPTARG} || error "${num_error}" 1
+      work_time="${OPTARG}"
+      ;;
+    r)
+      isnum ${OPTARG} || error "${num_error}" 1
+      rest_time="${OPTARG}"
       ;;
     h)
       usage
@@ -38,22 +96,22 @@ while getopts ":hc" opt; do
   esac
 done
 
+declare countdown="${countdown_seconds}${countdown_minutes}"
+work_time=$work_time*60
+rest_time=$rest_time*60
+
 echo "WORK!"
 
-for sec in $(seq 1500 -1 0); do
-  if [[ $countdown = "yes" ]]; then
-    echo -ne " $sec seconds of work remaining \r"
-  fi
+for sec in $(seq $work_time -1 0); do
+  show_time "$sec" "left" "$countdown"
   sleep 1
 done
 
 echo ""
 echo "Rest!"
 
-for sec in $(seq 300 -1 0); do
-  if [[ $countdown = "yes" ]]; then
-    echo -ne " $sec seconds of rest remaining \r"
-  fi
+for sec in $(seq $rest_time -1 0); do
+  show_time "$sec" "left" "$countdown"
   sleep 1
 done
 
